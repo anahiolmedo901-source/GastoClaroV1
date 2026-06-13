@@ -14,7 +14,6 @@ export default function Ajustes() {
     correo: '',
     moneda: 'MXN',
     presupuesto_mensual: '2500',
-    notifications: true,
   });
 
   const [isSaving, setIsSaving] = useState(false);
@@ -39,7 +38,6 @@ export default function Ajustes() {
           correo:              data.correo        ?? user.email ?? '',
           moneda:              data.moneda        ?? 'MXN',
           presupuesto_mensual: String(data.presupuesto_mensual ?? 2500),
-          notifications:       true,
         });
       }
       setIsLoading(false);
@@ -48,8 +46,11 @@ export default function Ajustes() {
     fetchUser();
   }, [user]);
 
+  const NAME_MAX = 50;
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value, type } = e.target;
+    if (name === 'nombre' && value.length > NAME_MAX) return;
     setFormData((prev) => ({
       ...prev,
       [name]: type === 'checkbox' ? (e.target as HTMLInputElement).checked : value,
@@ -160,12 +161,18 @@ export default function Ajustes() {
 
         <div className="space-y-6">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Nombre</label>
+            <div className="flex justify-between items-center mb-2">
+              <label className="block text-sm font-medium text-gray-700">Nombre</label>
+              <span className={`text-xs ${formData.nombre.length >= NAME_MAX ? 'text-red-500' : 'text-gray-400'}`}>
+                {formData.nombre.length}/{NAME_MAX}
+              </span>
+            </div>
             <input
               type="text"
               name="nombre"
               value={formData.nombre}
               onChange={handleChange}
+              maxLength={NAME_MAX}
               className="w-full px-5 py-4 border border-gray-200 rounded-2xl focus:outline-none focus:border-emerald-500"
             />
           </div>
@@ -231,22 +238,6 @@ export default function Ajustes() {
             </div>
           </div>
 
-          <div className="flex justify-between items-center">
-            <div>
-              <p className="font-medium">Notificaciones</p>
-              <p className="text-sm text-gray-500">Recordatorios de presupuesto</p>
-            </div>
-            <label className="relative inline-flex items-center cursor-pointer">
-              <input
-                type="checkbox"
-                name="notifications"
-                checked={formData.notifications}
-                onChange={handleChange}
-                className="sr-only peer"
-              />
-              <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-emerald-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
-            </label>
-          </div>
         </div>
       </div>
 

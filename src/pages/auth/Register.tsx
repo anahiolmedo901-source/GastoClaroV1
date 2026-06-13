@@ -12,6 +12,26 @@ export default function Register() {
   const { register } = useAuth();
   const navigate = useNavigate();
 
+  const NAME_MAX = 50;
+  const PASSWORD_MAX = 50;
+  const EMAIL_REGEX = /^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$/;
+
+  const handleNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    if (value.length <= NAME_MAX) setName(value);
+  };
+
+  const handleEmailChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    // Solo permitir caracteres válidos para email
+    const value = e.target.value.replace(/[^a-zA-Z0-9._%+\-@]/g, '');
+    setEmail(value);
+  };
+
+  const handlePasswordChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    if (value.length <= PASSWORD_MAX) setPassword(value);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -20,8 +40,20 @@ export default function Register() {
       setError('Por favor ingresa tu nombre');
       return;
     }
+    if (name.length > NAME_MAX) {
+      setError(`El nombre no puede exceder ${NAME_MAX} caracteres`);
+      return;
+    }
+    if (!EMAIL_REGEX.test(email)) {
+      setError('Por favor ingresa un correo electrónico válido');
+      return;
+    }
     if (password.length < 6) {
       setError('La contraseña debe tener al menos 6 caracteres');
+      return;
+    }
+    if (password.length > PASSWORD_MAX) {
+      setError(`La contraseña no puede exceder ${PASSWORD_MAX} caracteres`);
       return;
     }
 
@@ -51,13 +83,19 @@ export default function Register() {
 
         <form onSubmit={handleSubmit} className="space-y-6">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Nombre</label>
+            <div className="flex justify-between items-center mb-1">
+              <label className="block text-sm font-medium text-gray-700">Nombre</label>
+              <span className={`text-xs ${name.length >= NAME_MAX ? 'text-red-500' : 'text-gray-400'}`}>
+                {name.length}/{NAME_MAX}
+              </span>
+            </div>
             <input
               type="text"
               value={name}
-              onChange={(e) => setName(e.target.value)}
+              onChange={handleNameChange}
               required
               disabled={isLoading}
+              maxLength={NAME_MAX}
               className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:bg-gray-50"
               placeholder="Tu nombre"
             />
@@ -70,7 +108,7 @@ export default function Register() {
             <input
               type="email"
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              onChange={handleEmailChange}
               required
               disabled={isLoading}
               className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:bg-gray-50"
@@ -79,13 +117,19 @@ export default function Register() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Contraseña</label>
+            <div className="flex justify-between items-center mb-1">
+              <label className="block text-sm font-medium text-gray-700">Contraseña</label>
+              <span className={`text-xs ${password.length >= PASSWORD_MAX ? 'text-red-500' : 'text-gray-400'}`}>
+                {password.length}/{PASSWORD_MAX}
+              </span>
+            </div>
             <input
               type="password"
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              onChange={handlePasswordChange}
               required
               disabled={isLoading}
+              maxLength={PASSWORD_MAX}
               className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:bg-gray-50"
               placeholder="Mínimo 6 caracteres"
             />

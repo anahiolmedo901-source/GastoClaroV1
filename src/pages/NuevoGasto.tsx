@@ -1,7 +1,6 @@
 import { PlusCircle, Camera, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
-import Breadcrumbs from '../componentes/Breadcrumbs';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../Context/Authcontext';
 import { useSettings } from '../Context/SettingsContext';
@@ -21,6 +20,10 @@ interface GastoForm {
   notes: string;
 }
 
+const MAX_DESCRIPTION = 150;
+const MAX_NOTES = 200;
+const MAX_AMOUNT = 1_000_000;
+
 export default function NuevoGasto() {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -39,8 +42,10 @@ export default function NuevoGasto() {
     notes: '',
   });
 
+  const [errors, setErrors] = useState<Partial<Record<keyof GastoForm, string>>>({});
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [fileError, setFileError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
@@ -58,41 +63,71 @@ export default function NuevoGasto() {
     fetchCategorias();
   }, []);
 
-  const handleChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
-  ) => {
+  const validateField = (name: keyof GastoForm, value: string) => {
+    switch (name) {
+      case 'description':
+        if (!value.trim()) return 'La descripción es obligatoria';
+        if (value.length > MAX_DESCRIPTION) return `Máximo ${MAX_DESCRIPTION} caracteres`;
+        return '';
+      case 'amount': {
+        const n = parseFloat(value);
+        if (!value) return 'El monto es obligatorio';
+        if (isNaN(n) || n <= 0) return 'El monto debe ser mayor que 0';
+        if (n > MAX_AMOUNT) return `El monto no puede superar ${simbolo} ${MAX_AMOUNT.toLocaleString()}`;
+        return '';
+      }
+      case 'notes':
+        if (value.length > MAX_NOTES) return `Máximo ${MAX_NOTES} caracteres`;
+        return '';
+      default:
+        return '';
+    }
+  };
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
 
-    if (name === 'amount' && value.includes('-')) {
-      return;
-    }
+    // Bloquear negativos en monto
+    if (name === 'amount' && value.includes('-')) return;
 
-    setForm(prev => ({
-      ...prev,
-      [name]: value,
-    }));
+    setForm(prev => ({ ...prev, [name]: value }));
+
+    const err = validateField(name as keyof GastoForm, value);
+    setErrors(prev => ({ ...prev, [name]: err }));
   };
 
   const handleCategorySelect = (id: number) => {
     setForm(prev => ({ ...prev, id_categoria: id }));
+    setErrors(prev => ({ ...prev, id_categoria: '' }));
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setFileError(null);
     const file = e.target.files?.[0];
-    if (file) {
-      if (file.size > 5 * 1024 * 1024) {
-        alert('La imagen no debe superar los 5MB');
-        return;
-      }
-      setSelectedFile(file);
-      setPreviewUrl(URL.createObjectURL(file));
+    if (!file) return;
+
+    const allowed = ['image/jpeg', 'image/png'];
+    if (!allowed.includes(file.type)) {
+      setFileError('Solo se permiten archivos JPG o PNG');
+      e.target.value = '';
+      return;
     }
+
+    if (file.size > 5 * 1024 * 1024) {
+      setFileError('La imagen no debe superar los 5MB');
+      e.target.value = '';
+      return;
+    }
+
+    setSelectedFile(file);
+    setPreviewUrl(URL.createObjectURL(file));
   };
 
   const removeImage = () => {
     if (previewUrl) URL.revokeObjectURL(previewUrl);
     setSelectedFile(null);
     setPreviewUrl(null);
+    setFileError(null);
   };
 
   const uploadFoto = async (file: File): Promise<string | null> => {
@@ -114,22 +149,16 @@ export default function NuevoGasto() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!user) {
-      alert('Debes iniciar sesión para registrar un gasto');
-      return;
-    }
+    // Validar todos los campos antes de enviar
+    const descErr = validateField('description', form.description);
+    const amountErr = validateField('amount', form.amount);
+    const notesErr = validateField('notes', form.notes);
+    const catErr = !form.id_categoria ? 'Selecciona una categoría' : '';
 
-    if (!form.description || !form.amount || !form.id_categoria) {
-      alert('Por favor completa los campos obligatorios, incluyendo la categoría');
-      return;
-    }
+    setErrors({ description: descErr, amount: amountErr, notes: notesErr, id_categoria: catErr });
 
-    const monto = parseFloat(form.amount);
-
-    if (isNaN(monto) || monto <= 0) {
-      alert('El monto debe ser mayor que 0');
-      return;
-    }
+    if (descErr || amountErr || notesErr || catErr) return;
+    if (!user) { alert('Debes iniciar sesión'); return; }
 
     setIsSubmitting(true);
 
@@ -144,23 +173,20 @@ export default function NuevoGasto() {
         }
       }
 
-      const { error } = await supabase
-        .from('gastos')
-        .insert({
-          id_usuario: user.id,
-          descripcion: form.description,
-          monto,
-          fecha_gasto: form.date,
-          notas: form.notes || null,
-          id_categoria: form.id_categoria,
-          foto_url,
-        });
+      const { error } = await supabase.from('gastos').insert({
+        id_usuario: user.id,
+        descripcion: form.description,
+        monto: parseFloat(form.amount),
+        fecha_gasto: form.date,
+        notas: form.notes || null,
+        id_categoria: form.id_categoria,
+        foto_url,
+      });
 
       if (error) throw error;
 
       alert('Gasto registrado correctamente');
       navigate('/');
-
     } catch (error: any) {
       console.error('Error completo:', error);
       alert(`Error: ${error.message}`);
@@ -178,17 +204,23 @@ export default function NuevoGasto() {
 
       <form onSubmit={handleSubmit} className="bg-white p-8 rounded-3xl shadow-sm border border-gray-100 space-y-8">
 
+        {/* Foto del recibo */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-3">
-            Foto del recibo <span className="text-gray-400">(opcional)</span>
+            Foto del recibo <span className="text-gray-400">(opcional · JPG o PNG · máx. 5MB)</span>
           </label>
           <div className="flex gap-4 items-center">
             {!previewUrl && (
               <label className="cursor-pointer bg-gray-50 hover:bg-gray-100 border-2 border-dashed border-gray-300 rounded-2xl p-8 flex flex-col items-center justify-center w-48 h-48 transition">
-                <input type="file" accept="image/*" className="hidden" onChange={handleFileChange} />
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png"
+                  className="hidden"
+                  onChange={handleFileChange}
+                />
                 <Camera size={40} className="text-gray-400 mb-3" />
                 <span className="text-sm font-medium text-gray-600">Subir foto</span>
-                <span className="text-xs text-gray-400 mt-1">Máx. 5MB</span>
+                <span className="text-xs text-gray-400 mt-1">JPG / PNG · Máx. 5MB</span>
               </label>
             )}
 
@@ -208,8 +240,12 @@ export default function NuevoGasto() {
               </div>
             )}
           </div>
+          {fileError && (
+            <p className="mt-2 text-sm text-red-500">{fileError}</p>
+          )}
         </div>
 
+        {/* Descripción */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">Descripción *</label>
           <input
@@ -217,12 +253,21 @@ export default function NuevoGasto() {
             name="description"
             value={form.description}
             onChange={handleChange}
+            maxLength={MAX_DESCRIPTION}
             placeholder="Ej: Almuerzo en el centro comercial"
-            className="w-full px-5 py-4 border border-gray-200 rounded-2xl focus:outline-none focus:border-emerald-500 text-lg"
-            required
+            className={`w-full px-5 py-4 border rounded-2xl focus:outline-none focus:border-emerald-500 text-lg ${
+              errors.description ? 'border-red-400' : 'border-gray-200'
+            }`}
           />
+          <div className="flex justify-between mt-1">
+            <p className="text-sm text-red-500">{errors.description ?? ''}</p>
+            <p className={`text-xs ${form.description.length >= MAX_DESCRIPTION ? 'text-red-500 font-medium' : 'text-gray-400'}`}>
+              {form.description.length}/{MAX_DESCRIPTION}
+            </p>
+          </div>
         </div>
 
+        {/* Monto */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">Monto *</label>
           <div className="relative">
@@ -236,13 +281,19 @@ export default function NuevoGasto() {
               onChange={handleChange}
               step="0.01"
               min="0.01"
+              max={MAX_AMOUNT}
               placeholder="0.00"
-              className="w-full pl-14 pr-5 py-4 border border-gray-200 rounded-2xl focus:outline-none focus:border-emerald-500 text-3xl font-semibold"
-              required
+              className={`w-full pl-14 pr-5 py-4 border rounded-2xl focus:outline-none focus:border-emerald-500 text-3xl font-semibold ${
+                errors.amount ? 'border-red-400' : 'border-gray-200'
+              }`}
             />
           </div>
+          {errors.amount && (
+            <p className="mt-1 text-sm text-red-500">{errors.amount}</p>
+          )}
         </div>
 
+        {/* Categoría */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-3">Categoría *</label>
           {loadingCats ? (
@@ -266,8 +317,12 @@ export default function NuevoGasto() {
               ))}
             </div>
           )}
+          {errors.id_categoria && (
+            <p className="mt-2 text-sm text-red-500">{errors.id_categoria}</p>
+          )}
         </div>
 
+        {/* Fecha */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">Fecha</label>
           <input
@@ -275,10 +330,13 @@ export default function NuevoGasto() {
             name="date"
             value={form.date}
             onChange={handleChange}
+            min={(() => { const d = new Date(); d.setMonth(d.getMonth() - 1); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; })()}
+            max={`${new Date().getFullYear()}-${String(new Date().getMonth()+1).padStart(2,'0')}-${String(new Date().getDate()).padStart(2,'0')}`}
             className="w-full px-5 py-4 border border-gray-200 rounded-2xl focus:outline-none focus:border-emerald-500"
           />
         </div>
 
+        {/* Notas */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">Notas adicionales</label>
           <textarea
@@ -286,9 +344,18 @@ export default function NuevoGasto() {
             value={form.notes}
             onChange={handleChange}
             rows={3}
+            maxLength={MAX_NOTES}
             placeholder="Ej: Pagado en efectivo..."
-            className="w-full px-5 py-4 border border-gray-200 rounded-2xl focus:outline-none focus:border-emerald-500 resize-y"
+            className={`w-full px-5 py-4 border rounded-2xl focus:outline-none focus:border-emerald-500 resize-y ${
+              errors.notes ? 'border-red-400' : 'border-gray-200'
+            }`}
           />
+          <div className="flex justify-between mt-1">
+            <p className="text-sm text-red-500">{errors.notes ?? ''}</p>
+            <p className={`text-xs ${form.notes.length >= MAX_NOTES ? 'text-red-500 font-medium' : 'text-gray-400'}`}>
+              {form.notes.length}/{MAX_NOTES}
+            </p>
+          </div>
         </div>
 
         <button
@@ -297,7 +364,7 @@ export default function NuevoGasto() {
           className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 text-white font-semibold py-5 rounded-2xl text-lg flex items-center justify-center gap-3 transition"
         >
           {isSubmitting ? (
-            <span>{selectedFile ? 'Guardando...' : 'Guardando...'}</span>
+            <span>Guardando...</span>
           ) : (
             <>
               <PlusCircle size={24} />
